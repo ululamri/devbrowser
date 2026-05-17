@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DevBrowser</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#222639;
+  --border:#2e3347;--accent:#4f9eff;--accent2:#7c5cfc;
+  --text:#d4d8f0;--text2:#6b7494;
+  --err:#f4717a;--warn:#e8a838;--info:#4fcfff;--ok:#4ec9b0;
+  --mono:'Courier New',monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:13px;overflow:hidden;user-select:none;}
+
+/* ─── BROWSER CHROME ─── */
+#app{display:flex;flex-direction:column;height:100vh;}
+
+#toolbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  padding:6px 8px;
+  display:flex;align-items:center;gap:6px;
+  flex-shrink:0;
+}
+.nav-btn{
+  background:none;border:none;color:var(--text2);
+  cursor:pointer;padding:5px 7px;border-radius:6px;
+  font-size:15px;line-height:1;transition:background .15s,color .15s;
+}
+.nav-btn:hover{background:var(--surface2);color:var(--text);}
+.nav-btn:disabled{opacity:.25;cursor:default;}
+
+#url-bar{
+  flex:1;display:flex;align-items:center;
+  background:var(--bg);
+  border:1.5px solid var(--border);
+  border-radius:22px;padding:0 10px;gap:6px;
+  transition:border-color .2s;
+}
+#url-bar:focus-within{border-color:var(--accent);}
+#url-input{
+  flex:1;background:none;border:none;outline:none;
+  color:var(--text);font-size:12px;
+  font-family:var(--mono);padding:5px 0;
+}
+#secure-icon{font-size:12px;flex-shrink:0;}
+#go-btn{background:none;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:2px 4px;}
+#go-btn:hover{color:var(--accent);}
+
+#dt-toggle-btn{
+  flex-shrink:0;
+  background:linear-gradient(135deg,#4f9eff22,#7c5cfc22);
+  border:1px solid var(--border);
+  border-radius:7px;color:var(--accent);
+  padding:5px 8px;cursor:pointer;font-size:11px;
+  white-space:nowrap;
+}
+#dt-toggle-btn:hover{background:linear-gradient(135deg,#4f9eff33,#7c5cfc33);}
+
+/* ─── CONTENT ─── */
+#content-area{flex:1;position:relative;overflow:hidden;background:#fff;}
+#browser-frame{width:100%;height:100%;border:none;background:#fff;}
+#loading-bar{
+  position:absolute;top:0;left:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  width:0%;z-index:10;transition:opacity .3s;
+}
+#loading-bar.running{animation:loadbar 2s infinite;}
+@keyframes loadbar{
+  0%{width:0%;opacity:1}50%{width:80%;opacity:1}100%{width:100%;opacity:0}
+}
+#error-overlay{
+  display:none;position:absolute;inset:0;background:var(--bg);
+  flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;padding:24px;text-align:center;z-index:5;
+}
+#error-overlay.show{display:flex;}
+#error-icon{font-size:48px;opacity:.3;}
+#error-msg{color:var(--text2);font-size:13px;line-height:1.6;}
+#error-url{color:var(--err);font-size:11px;font-family:var(--mono);word-break:break-all;}
+
+/* ─── DEVTOOLS ─── */
+#devtools{
+  background:var(--surface);border-top:1px solid var(--border);
+  display:flex;flex-direction:column;
+  flex-shrink:0;height:300px;
+  min-height:100px;max-height:75vh;
+}
+#devtools.hidden{display:none;}
+#dt-resize{
+  height:5px;cursor:ns-resize;flex-shrink:0;
+  background:transparent;transition:background .15s;
+}
+#dt-resize:hover{background:var(--accent);}
+#dt-tabs{
+  display:flex;background:var(--bg);
+  border-bottom:1px solid var(--border);
+  overflow-x:auto;flex-shrink:0;
+}
+#dt-tabs::-webkit-scrollbar{display:none;}
+.dt-tab{
+  padding:7px 12px;cursor:pointer;color:var(--text2);
+  font-size:11px;white-space:nowrap;flex-shrink:0;
+  border-bottom:2px solid transparent;transition:color .15s;
+}
+.dt-tab:hover{color:var(--text);}
+.dt-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+#dt-close{
+  margin-left:auto;padding:7px 10px;cursor:pointer;
+  color:var(--text2);font-size:14px;flex-shrink:0;
+}
+#dt-close:hover{color:var(--err);}
+#dt-content{flex:1;overflow:hidden;position:relative;}
+.dt-panel{display:none;height:100%;flex-direction:column;}
+.dt-panel.active{display:flex;}
+
+/* ─── CONSOLE ─── */
+#console-out{
+  flex:1;overflow-y:auto;padding:2px 0;
+  font-family:var(--mono);font-size:12px;
+}
+#console-out::-webkit-scrollbar{width:3px;}
+#console-out::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.ce{
+  padding:2px 8px;border-bottom:1px solid transparent;
+  display:flex;align-items:flex-start;gap:8px;line-height:1.5;
+  cursor:default;
+}
+.ce:hover{background:var(--surface2);}
+.ce.log{color:var(--text);}
+.ce.info{color:var(--info);background:rgba(79,207,255,.04);border-color:rgba(79,207,255,.1);}
+.ce.warn{color:var(--warn);background:rgba(232,168,56,.04);border-color:rgba(232,168,56,.15);}
+.ce.error{color:var(--err);background:rgba(244,113,122,.04);border-color:rgba(244,113,122,.15);}
+.ce.ret{color:var(--info);}
+.ce.cmd{color:#9cdcfe;}
+.ci{opacity:.5;flex-shrink:0;font-size:10px;margin-top:2px;min-width:10px;}
+.ct{flex:1;word-break:break-all;white-space:pre-wrap;}
+#console-in-area{
+  display:flex;align-items:center;gap:6px;
+  border-top:1px solid var(--border);padding:3px 8px;
+  background:var(--bg);flex-shrink:0;
+}
+#console-prompt{color:var(--accent);font-family:var(--mono);font-size:13px;}
+#console-input{
+  flex:1;background:none;border:none;outline:none;
+  color:#9cdcfe;font-family:var(--mono);font-size:12px;padding:4px 0;
+}
+#console-clear{
+  background:none;border:none;color:var(--text2);cursor:pointer;
+  font-size:10px;padding:2px 5px;border-radius:3px;
+}
+#console-clear:hover{background:var(--surface2);color:var(--text);}
+
+/* ─── ELEMENTS ─── */
+#elem-panel{flex:1;overflow-y:auto;padding:4px;font-family:var(--mono);font-size:11px;}
+#elem-panel::-webkit-scrollbar{width:3px;}
+#elem-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.en{padding:1px 0 1px 16px;cursor:pointer;position:relative;line-height:1.7;border-radius:2px;}
+.en:hover{background:rgba(255,255,255,.04);}
+.en.selected{background:rgba(79,158,255,.15);}
+.e-tag{color:#4ec9b0;}
+.e-an{color:#9cdcfe;}
+.e-av{color:#ce9178;}
+.e-txt{color:var(--text2);}
+.e-tog{position:absolute;left:2px;top:50%;transform:translateY(-50%);color:var(--text2);font-size:9px;cursor:pointer;}
+#elem-bar{
+  padding:4px 8px;border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:11px;color:var(--info);
+  background:var(--bg);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ─── NETWORK ─── */
+#net-toolbar{
+  padding:4px 8px;border-bottom:1px solid var(--border);
+  display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;
+}
+.net-filter{
+  font-size:11px;color:var(--text2);cursor:pointer;
+  padding:2px 7px;border-radius:3px;border:1px solid transparent;
+}
+.net-filter.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.net-filter:hover:not(.active){border-color:var(--border);}
+#net-clear{
+  background:none;border:1px solid var(--border);color:var(--text2);
+  padding:2px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-left:auto;
+}
+#net-clear:hover{color:var(--text);border-color:var(--text2);}
+#net-list{flex:1;overflow-y:auto;}
+#net-list::-webkit-scrollbar{width:3px;}
+#net-list::-webkit-scrollbar-thumb{background:var(--border);}
+.nh{
+  display:grid;grid-template-columns:1fr 50px 55px 55px;
+  padding:3px 8px;font-size:10px;color:var(--text2);
+  border-bottom:1px solid var(--border);
+  background:var(--bg);position:sticky;top:0;
+}
+.nr{
+  display:grid;grid-template-columns:1fr 50px 55px 55px;
+  padding:3px 8px;font-size:11px;font-family:var(--mono);
+  border-bottom:1px solid rgba(46,51,71,.5);cursor:pointer;
+}
+.nr:hover{background:var(--surface2);}
+.nr .nu{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.s-ok{color:var(--ok);}
+.s-err{color:var(--err);}
+.s-pend{color:var(--warn);}
+.s-redir{color:var(--info);}
+
+/* ─── APPLICATION ─── */
+#app-panel{flex:1;overflow-y:auto;padding:8px;}
+#app-panel::-webkit-scrollbar{width:3px;}
+#app-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.st-sec{margin-bottom:20px;}
+.st-title{
+  font-size:10px;color:var(--text2);text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;gap:6px;
+}
+.st-refresh{
+  background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;margin-left:4px;
+}
+.st-refresh:hover{color:var(--accent);}
+.st-tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;}
+.st-tbl th{
+  text-align:left;color:var(--text2);padding:3px 6px;
+  border-bottom:1px solid var(--border);font-weight:normal;
+}
+.st-tbl td{
+  padding:3px 6px;border-bottom:1px solid rgba(46,51,71,.4);
+  overflow:hidden;max-width:150px;text-overflow:ellipsis;white-space:nowrap;
+}
+.st-tbl tr:hover td{background:var(--surface2);}
+.st-empty{color:var(--text2);font-size:11px;padding:6px 4px;}
+
+/* ─── PERFORMANCE ─── */
+#perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;}
+.perf-card{
+  background:var(--surface2);border-radius:6px;padding:8px 10px;
+  border:1px solid var(--border);
+}
+.perf-label{font-size:10px;color:var(--text2);margin-bottom:4px;}
+.perf-val{font-size:16px;font-weight:600;color:var(--accent);}
+#perf-resources{padding:0 8px 8px;font-size:11px;}
+.res-row{
+  display:flex;align-items:center;gap:6px;padding:2px 0;font-family:var(--mono);
+}
+.res-name{width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);}
+.res-bar-wrap{flex:1;background:var(--border);border-radius:2px;height:3px;}
+.res-bar{height:3px;border-radius:2px;background:var(--accent);}
+.res-time{color:var(--info);min-width:42px;text-align:right;}
+
+/* ─── SOURCES ─── */
+#src-panel{
+  flex:1;overflow:auto;padding:8px;
+  font-family:var(--mono);font-size:11px;color:var(--text2);
+}
+.src-file{
+  padding:4px 8px;cursor:pointer;border-radius:4px;
+  display:flex;align-items:center;gap:8px;
+}
+.src-file:hover{background:var(--surface2);}
+.src-icon{font-size:14px;}
+
+/* ─── FAB ─── */
+#dt-fab{
+  position:absolute;bottom:10px;right:10px;z-index:6;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;border-radius:28px;color:#fff;
+  padding:8px 14px;cursor:pointer;font-size:12px;font-weight:600;
+  box-shadow:0 3px 12px rgba(79,158,255,.35);
+  display:flex;align-items:center;gap:6px;
+}
+#dt-fab:hover{opacity:.9;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOOLBAR -->
+  <div id="toolbar">
+    <button class="nav-btn" id="btn-back" title="Kembali" disabled>&#8592;</button>
+    <button class="nav-btn" id="btn-fwd"  title="Maju"   disabled>&#8594;</button>
+    <button class="nav-btn" id="btn-ref"  title="Refresh">&#8635;</button>
+    <div id="url-bar">
+      <span id="secure-icon">🌐</span>
+      <input id="url-input" type="url" placeholder="Ketik URL atau pencarian..." autocomplete="off" spellcheck="false"/>
+      <button id="go-btn">&#9654;</button>
+    </div>
+    <button id="dt-toggle-btn">&#128202; DevTools</button>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content-area">
+    <div id="loading-bar"></div>
+    <iframe id="browser-frame"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+      title="Browser Content"></iframe>
+    <div id="error-overlay">
+      <div id="error-icon">&#128683;</div>
+      <strong style="color:var(--text)">Halaman Tidak Dapat Dimuat</strong>
+      <div id="error-msg">Beberapa situs memblokir loading dalam iframe (X-Frame-Options).<br>Coba situs lain atau gunakan data: URL.</div>
+      <div id="error-url"></div>
+    </div>
+    <button id="dt-fab">&#128202; DevTools</button>
+  </div>
+
+  <!-- DEVTOOLS -->
+  <div id="devtools" class="hidden">
+    <div id="dt-resize"></div>
+    <div id="dt-tabs">
+      <div class="dt-tab active" data-tab="console">Console</div>
+      <div class="dt-tab" data-tab="elements">Elements</div>
+      <div class="dt-tab" data-tab="network">Network</div>
+      <div class="dt-tab" data-tab="application">Application</div>
+      <div class="dt-tab" data-tab="performance">Performance</div>
+      <div class="dt-tab" data-tab="sources">Sources</div>
+      <div id="dt-close" title="Tutup">&#10005;</div>
+    </div>
+    <div id="dt-content">
+
+      <!-- CONSOLE -->
+      <div class="dt-panel active" id="panel-console">
+        <div id="console-out"></div>
+        <div id="console-in-area">
+          <span id="console-prompt">&gt;</span>
+          <input id="console-input" placeholder="Eksekusi JavaScript..." autocomplete="off" spellcheck="false"/>
+          <button id="console-clear" title="Clear">&#128465;</button>
+        </div>
+      </div>
+
+      <!-- ELEMENTS -->
+      <div class="dt-panel" id="panel-elements">
+        <div id="elem-bar">Pilih halaman untuk inspect DOM</div>
+        <div id="elem-panel"></div>
+      </div>
+
+      <!-- NETWORK -->
+      <div class="dt-panel" id="panel-network">
+        <div id="net-toolbar">
+          <span class="net-filter active" data-filter="all">All</span>
+          <span class="net-filter" data-filter="Fetch">Fetch/XHR</span>
+          <span class="net-filter" data-filter="Doc">Doc</span>
+          <span class="net-filter" data-filter="JS">JS</span>
+          <span class="net-filter" data-filter="CSS">CSS</span>
+          <button id="net-clear">Clear</button>
+        </div>
+        <div id="net-list">
+          <div class="nh">
+            <span>Name</span><span>Status</span><span>Type</span><span>Time</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- APPLICATION -->
+      <div class="dt-panel" id="panel-application">
+        <div id="app-panel">
+          <div class="st-sec">
+            <div class="st-title">&#128230; localStorage <button class="st-refresh" onclick="refreshStorage()">&#8635;</button></div>
+            <div id="ls-content"></div>
+          </div>
+          <div class="st-sec">
+            <div class="st-title">&#9201; sessionStorage</div>
+            <div id="ss-content"></div>
+          </div>
+          <div class="st-sec">
+            <div class="st-title">&#127850; Cookies</div>
+            <div id="cookies-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PERFORMANCE -->
+      <div class="dt-panel" id="panel-performance">
+        <div id="perf-grid"></div>
+        <div id="perf-resources"></div>
+      </div>
+
+      <!-- SOURCES -->
+      <div class="dt-panel" id="panel-sources">
+        <div id="src-panel"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  hist: [], hIdx: -1, url: '',
+  loading: false, dtOpen: false, tab: 'console',
+  netReqs: [], netFilter: 'all',
+  cmdHist: [], cmdIdx: -1
+};
+
+// ═══════════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════════
+const frame    = $('browser-frame');
+const urlInput = $('url-input');
+const loadBar  = $('loading-bar');
+const btnBack  = $('btn-back');
+const btnFwd   = $('btn-fwd');
+const btnRef   = $('btn-ref');
+const devtools = $('devtools');
+const conOut   = $('console-out');
+const conIn    = $('console-input');
+const netList  = $('net-list');
+const elemPnl  = $('elem-panel');
+const elemBar  = $('elem-bar');
+const errOverlay = $('error-overlay');
+const errUrl   = $('error-url');
+function $(id){return document.getElementById(id);}
+
+// ═══════════════════════════════════════════════════════════
+// CONSOLE INTERCEPT
+// ═══════════════════════════════════════════════════════════
+const _c = {};
+['log','warn','error','info','debug'].forEach(m => {
+  _c[m] = console[m].bind(console);
+  console[m] = (...a) => { _c[m](...a); addLog(m, a); };
+});
+console.clear = () => { conOut.innerHTML = ''; };
+window.onerror = (msg,src,ln) => addLog('error',[`${msg} (${src}:${ln})`]);
+window.addEventListener('unhandledrejection', e => addLog('error',[`Uncaught Promise: ${e.reason}`]));
+
+// ═══════════════════════════════════════════════════════════
+// NETWORK INTERCEPT
+// ═══════════════════════════════════════════════════════════
+const _fetch = window.fetch;
+window.fetch = async function(...args){
+  const url = typeof args[0]==='string'?args[0]:(args[0]?.url||'?');
+  const method = args[1]?.method||'GET';
+  const r = mkReq(url, method, 'Fetch');
+  try {
+    const res = await _fetch(...args);
+    const ct = res.headers.get('content-type')||'';
+    r.type = ct.includes('json')?'JSON':ct.includes('html')?'Doc':'Fetch';
+    finReq(r, res.status, res.ok?'ok':'err');
+    return res;
+  } catch(e){ finReq(r,'ERR','err'); throw e; }
+};
+
+const _XHR = window.XMLHttpRequest;
+function PatchedXHR(){
+  const x = new _XHR();
+  let r;
+  const _open = x.open.bind(x);
+  x.open = function(m,u,...rest){ r = mkReq(u,m,'XHR'); return _open(m,u,...rest); };
+  x.addEventListener('loadend',()=>{
+    if(r) finReq(r, x.status||'ERR', x.status>=200&&x.status<400?'ok':'err');
+  });
+  return x;
+}
+PatchedXHR.prototype = _XHR.prototype;
+window.XMLHttpRequest = PatchedXHR;
+
+function mkReq(url,method,type){
+  const r={id:Date.now()+Math.random(),url,method,type,status:'···',cls:'pend',time:'···',t0:Date.now()};
+  S.netReqs.push(r);
+  renderNetRow(r);
+  return r;
+}
+function finReq(r,status,cls){
+  r.status=status; r.cls=cls; r.time=(Date.now()-r.t0)+'ms';
+  const row=document.querySelector(`[data-rid="${r.id}"]`);
+  if(row){
+    row.querySelector('.rs').textContent=status;
+    row.querySelector('.rs').className='rs s-'+cls;
+    row.querySelector('.rt').textContent=r.time;
+  }
+}
+function renderNetRow(r){
+  if(S.netFilter!=='all'&&r.type!==S.netFilter) return;
+  const d=document.createElement('div');
+  d.className='nr'; d.dataset.rid=r.id; d.dataset.type=r.type;
+  const name=r.url.replace(/^https?:\/\//,'').split('?')[0].slice(0,40);
+  d.innerHTML=`<span class="nu" title="${esc(r.url)}">${esc(name)}</span>
+    <span class="rs s-pend">${r.status}</span>
+    <span>${r.type}</span>
+    <span class="rt">${r.time}</span>`;
+  d.addEventListener('click',()=>{
+    addLog('info',[`[Network] ${r.method} ${r.url} → ${r.status} (${r.time})`]);
+    openTab('console');
+  });
+  netList.appendChild(d);
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function navigate(raw){
+  let url = raw.trim();
+  if(!url) return;
+  if(!url.match(/^(https?:|data:|about:|javascript:)/i)){
+    if(url.includes('.')&&!url.includes(' ')) url='https://'+url;
+    else url='https://www.google.com/search?q='+encodeURIComponent(url);
+  }
+  errOverlay.classList.remove('show');
+  startLoad();
+  urlInput.value=url; S.url=url;
+  S.hist=S.hist.slice(0,S.hIdx+1);
+  S.hist.push(url); S.hIdx=S.hist.length-1;
+  updNav();
+  addReqDoc(url);
+  updateSecure(url);
+  frame.src=url;
+  const t0=Date.now();
+  frame.onload=()=>{
+    stopLoad();
+    addLog('info',[`Loaded: ${url} (${Date.now()-t0}ms)`]);
+    if(S.tab==='elements') updElements();
+    if(S.tab==='sources') updSources();
+  };
+  frame.onerror=()=>{
+    stopLoad();
+    errOverlay.classList.add('show');
+    errUrl.textContent=url;
+    addLog('error',[`Gagal memuat: ${url}`]);
+  };
+}
+function addReqDoc(url){
+  const r={id:'doc-'+Date.now(),url,method:'GET',type:'Doc',status:'···',cls:'pend',time:'···',t0:Date.now()};
+  S.netReqs.push(r);
+  renderNetRow(r);
+  setTimeout(()=>finReq(r,200,'ok'),800);
+}
+function startLoad(){
+  S.loading=true;
+  loadBar.style.width='0'; loadBar.style.opacity='1';
+  loadBar.classList.add('running');
+  btnRef.innerHTML='&#10005;'; btnRef.title='Stop';
+}
+function stopLoad(){
+  S.loading=false;
+  loadBar.classList.remove('running');
+  loadBar.style.width='100%';
+  setTimeout(()=>{loadBar.style.width='0';},400);
+  btnRef.innerHTML='&#8635;'; btnRef.title='Refresh';
+}
+function updNav(){
+  btnBack.disabled=S.hIdx<=0;
+  btnFwd.disabled=S.hIdx>=S.hist.length-1;
+}
+function updateSecure(url){
+  $('secure-icon').textContent=
+    url.startsWith('https://')?'🔒':
+    url.startsWith('http://')?'⚠️':'🌐';
+}
+function goBack(){
+  if(S.hIdx<=0) return;
+  S.hIdx--; navIdx();
+}
+function goFwd(){
+  if(S.hIdx>=S.hist.length-1) return;
+  S.hIdx++; navIdx();
+}
+function navIdx(){
+  const url=S.hist[S.hIdx];
+  urlInput.value=url; S.url=url;
+  updateSecure(url);
+  startLoad();
+  frame.src=url;
+  frame.onload=()=>{stopLoad();updNav();};
+  updNav();
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONSOLE
+// ═══════════════════════════════════════════════════════════
+function fmtVal(v){
+  if(v===null) return `<span style="color:var(--text2)">null</span>`;
+  if(v===undefined) return `<span style="color:var(--text2)">undefined</span>`;
+  if(typeof v==='boolean') return `<span style="color:#569cd6">${v}</span>`;
+  if(typeof v==='number') return `<span style="color:#b5cea8">${v}</span>`;
+  if(typeof v==='function') return `<span style="color:var(--warn)">ƒ ${esc(v.name||'anonymous')}()</span>`;
+  if(typeof v==='string') return esc(v);
+  if(Array.isArray(v)) return `<span style="color:var(--text2)">[${v.length}]</span>`;
+  if(typeof v==='object'){
+    try{
+      const ks=Object.keys(v).slice(0,4);
+      return `<span style="color:var(--text2)">{${ks.map(k=>`<span style="color:#9cdcfe">${k}</span>: ${fmtVal(v[k])}`).join(', ')}${Object.keys(v).length>4?', …':''}}</span>`;
+    }catch{return esc(String(v));}
+  }
+  return esc(String(v));
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function addLog(type,args){
+  const icons={log:'·',info:'ℹ',warn:'▲',error:'✖',ret:'←',cmd:'›'};
+  const text=args.map(a=>typeof a==='object'&&a!==null?fmtVal(a):esc(String(a))).join(' ');
+  const d=document.createElement('div');
+  d.className='ce '+type;
+  d.innerHTML=`<span class="ci">${icons[type]||'·'}</span><span class="ct">${text}</span>`;
+  conOut.appendChild(d);
+  conOut.scrollTop=conOut.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ELEMENTS
+// ═══════════════════════════════════════════════════════════
+function updElements(){
+  elemPnl.innerHTML='';
+  try{
+    const doc=frame.contentDocument;
+    if(!doc||!doc.documentElement) throw new Error('cross-origin');
+    elemBar.textContent=S.url||'(no page)';
+    renderNode(doc.documentElement,elemPnl,0);
+  }catch{
+    elemBar.textContent='Cross-origin: akses DOM dibatasi';
+    elemPnl.innerHTML=`<div style="padding:12px;color:var(--text2);font-size:11px;line-height:1.7">
+      Situs ini menggunakan header <span style="color:var(--err)">X-Frame-Options</span> atau cross-origin policy.<br>
+      Inspect DOM hanya tersedia untuk halaman same-origin atau <code>data:</code> URL.
+    </div>`;
+  }
+}
+function renderNode(node,container,depth){
+  if(depth>8) return;
+  if(node.nodeType===3){
+    const t=node.textContent.trim();
+    if(!t) return;
+    const d=document.createElement('div');
+    d.className='en e-txt';
+    d.style.paddingLeft=(depth*12+14)+'px';
+    d.textContent='"'+t.slice(0,80)+(t.length>80?'…':'')+'"';
+    container.appendChild(d);
+    return;
+  }
+  if(node.nodeType!==1) return;
+  const tag=node.tagName.toLowerCase();
+  let attrs='';
+  for(const a of (node.attributes||[])){
+    attrs+=` <span class="e-an">${esc(a.name)}</span>`;
+    if(a.value) attrs+=`=<span class="e-av">"${esc(a.value.slice(0,50))}"</span>`;
+  }
+  const hasKids=[...node.childNodes].some(n=>n.nodeType===1||(n.nodeType===3&&n.textContent.trim()));
+  const d=document.createElement('div');
+  d.className='en'; d.style.paddingLeft=(depth*12+14)+'px';
+  d.innerHTML=(hasKids?`<span class="e-tog" data-x="1">▼</span>`:'')+
+    `<span class="e-tag">&lt;${tag}</span>${attrs}<span class="e-tag">&gt;</span>`;
+  const kc=document.createElement('div');
+  d.querySelector('.e-tog')?.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const t=ev.target,x=t.dataset.x==='1';
+    t.dataset.x=x?'0':'1'; t.textContent=x?'▶':'▼';
+    kc.style.display=x?'none':'';
+  });
+  d.addEventListener('click',()=>{
+    document.querySelectorAll('.en.selected').forEach(e=>e.classList.remove('selected'));
+    d.classList.add('selected');
+    elemBar.textContent=`<${tag}> · ${node.childNodes.length} children`;
+  });
+  container.appendChild(d);
+  if(hasKids){
+    for(const c of node.childNodes) renderNode(c,kc,depth+1);
+    const cl=document.createElement('div');
+    cl.className='en'; cl.style.paddingLeft=(depth*12+14)+'px';
+    cl.innerHTML=`<span class="e-tag">&lt;/${tag}&gt;</span>`;
+    kc.appendChild(cl);
+    container.appendChild(kc);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// APPLICATION
+// ═══════════════════════════════════════════════════════════
+function refreshStorage(){
+  renderSt('ls-content',localStorage);
+  renderSt('ss-content',sessionStorage);
+  renderCookies();
+}
+function renderSt(id,stor){
+  const el=$(id);
+  if(!stor.length){el.innerHTML='<div class="st-empty">Tidak ada item</div>';return;}
+  let h='<table class="st-tbl"><tr><th>Key</th><th>Value</th></tr>';
+  for(let i=0;i<stor.length;i++){
+    const k=stor.key(i),v=stor.getItem(k)||'';
+    h+=`<tr><td title="${esc(k)}">${esc(k.slice(0,30))}</td><td title="${esc(v)}">${esc(v.slice(0,40))}${v.length>40?'…':''}</td></tr>`;
+  }
+  el.innerHTML=h+'</table>';
+}
+function renderCookies(){
+  const el=$('cookies-content');
+  if(!document.cookie){el.innerHTML='<div class="st-empty">Tidak ada cookie</div>';return;}
+  let h='<table class="st-tbl"><tr><th>Name</th><th>Value</th></tr>';
+  document.cookie.split(';').forEach(c=>{
+    const [n,...vs]=c.trim().split('=');
+    if(n) h+=`<tr><td>${esc(n)}</td><td>${esc(vs.join('=').slice(0,40))}</td></tr>`;
+  });
+  el.innerHTML=h+'</table>';
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERFORMANCE
+// ═══════════════════════════════════════════════════════════
+function updPerf(){
+  const nav=performance.getEntriesByType('navigation')[0];
+  const mem=performance.memory;
+  const grid=$('perf-grid');
+  const metrics=[
+    ['DNS Lookup', nav?Math.round(nav.domainLookupEnd-nav.domainLookupStart)+'ms':'N/A'],
+    ['TCP Connect', nav?Math.round(nav.connectEnd-nav.connectStart)+'ms':'N/A'],
+    ['TTFB', nav?Math.round(nav.responseStart-nav.fetchStart)+'ms':'N/A'],
+    ['DOM Ready', nav?Math.round(nav.domContentLoadedEventEnd-nav.fetchStart)+'ms':'N/A'],
+    ['Load Time', nav?Math.round(nav.loadEventEnd-nav.fetchStart)+'ms':'N/A'],
+    ['Resources', performance.getEntriesByType('resource').length+' loaded'],
+    ...(mem?[
+      ['JS Heap',Math.round(mem.usedJSHeapSize/1048576)+'MB / '+Math.round(mem.totalJSHeapSize/1048576)+'MB'],
+      ['Heap Limit',Math.round(mem.jsHeapSizeLimit/1048576)+'MB'],
+    ]:[]),
+  ];
+  grid.innerHTML=metrics.map(([l,v])=>`
+    <div class="perf-card">
+      <div class="perf-label">${l}</div>
+      <div class="perf-val">${v}</div>
+    </div>`).join('');
+  
+  const resources=performance.getEntriesByType('resource').slice(0,12);
+  const maxDur=Math.max(...resources.map(r=>r.duration),1);
+  $('perf-resources').innerHTML=resources.length?`
+    <div style="padding:0 0 6px;font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Resource Timing</div>
+    ${resources.map(r=>{
+      const name=r.name.split('/').pop().split('?')[0].slice(0,22)||r.name.slice(-22);
+      const pct=Math.round((r.duration/maxDur)*100);
+      const dur=Math.round(r.duration);
+      return `<div class="res-row">
+        <span class="res-name" title="${esc(r.name)}">${esc(name)}</span>
+        <div class="res-bar-wrap"><div class="res-bar" style="width:${pct}%"></div></div>
+        <span class="res-time">${dur}ms</span>
+      </div>`;
+    }).join('')}`:'<div style="color:var(--text2);font-size:11px;padding:4px 0">Belum ada resource timing data</div>';
+}
+
+// ═══════════════════════════════════════════════════════════
+// SOURCES
+// ═══════════════════════════════════════════════════════════
+function updSources(){
+  const panel=$('src-panel');
+  const resources=performance.getEntriesByType('resource');
+  if(!resources.length){
+    panel.innerHTML='<div style="color:var(--text2)">Belum ada halaman dimuat</div>';return;
+  }
+  const types={js:'🟨',css:'🟦',img:'🖼',html:'📄',font:'🔤',other:'📦'};
+  const grouped={};
+  resources.forEach(r=>{
+    const ext=r.name.split('.').pop().split('?')[0].toLowerCase();
+    const type=ext==='js'?'js':ext==='css'?'css':['png','jpg','jpeg','gif','svg','webp','ico'].includes(ext)?'img':ext==='html'||ext==='htm'?'html':['woff','woff2','ttf','eot'].includes(ext)?'font':'other';
+    (grouped[type]=grouped[type]||[]).push(r);
+  });
+  panel.innerHTML='<div style="margin-bottom:8px;color:var(--text2);font-size:10px;">'+resources.length+' resource dimuat</div>'+
+    Object.entries(grouped).map(([type,rs])=>`
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;text-transform:uppercase">${type.toUpperCase()} (${rs.length})</div>
+        ${rs.slice(0,8).map(r=>{
+          const name=r.name.replace(/^https?:\/\//,'').slice(0,50);
+          return `<div class="src-file">
+            <span class="src-icon">${types[type]||types.other}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)" title="${esc(r.name)}">${esc(name)}</span>
+            <span style="color:var(--text2);font-size:10px">${Math.round(r.encodedBodySize/1024)||'?'}KB</span>
+          </div>`;
+        }).join('')}
+      </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════
+function openTab(id){
+  S.tab=id;
+  document.querySelectorAll('.dt-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
+  document.querySelectorAll('.dt-panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+id));
+  if(id==='elements') updElements();
+  if(id==='application') refreshStorage();
+  if(id==='performance') updPerf();
+  if(id==='sources') updSources();
+}
+document.querySelectorAll('.dt-tab').forEach(t=>{
+  if(t.dataset.tab) t.addEventListener('click',()=>openTab(t.dataset.tab));
+});
+
+// ═══════════════════════════════════════════════════════════
+// DEVTOOLS PANEL
+// ═══════════════════════════════════════════════════════════
+function toggleDT(open){
+  S.dtOpen=open!==undefined?open:!S.dtOpen;
+  devtools.classList.toggle('hidden',!S.dtOpen);
+}
+$('dt-toggle-btn').addEventListener('click',()=>toggleDT());
+$('dt-fab').addEventListener('click',()=>toggleDT(true));
+$('dt-close').addEventListener('click',()=>toggleDT(false));
+
+// Resize handle
+let rDrag=false,rY0=0,rH0=0;
+const rHandle=$('dt-resize');
+const startResize=(y)=>{rDrag=true;rY0=y;rH0=devtools.offsetHeight;};
+rHandle.addEventListener('mousedown',e=>startResize(e.clientY));
+rHandle.addEventListener('touchstart',e=>startResize(e.touches[0].clientY));
+window.addEventListener('mousemove',e=>{
+  if(!rDrag) return;
+  const dy=rY0-e.clientY;
+  devtools.style.height=Math.max(100,Math.min(window.innerHeight*.75,rH0+dy))+'px';
+});
+window.addEventListener('touchmove',e=>{
+  if(!rDrag) return;
+  const dy=rY0-e.touches[0].clientY;
+  devtools.style.height=Math.max(100,Math.min(window.innerHeight*.75,rH0+dy))+'px';
+},{passive:true});
+window.addEventListener('mouseup',()=>rDrag=false);
+window.addEventListener('touchend',()=>rDrag=false);
+
+// ═══════════════════════════════════════════════════════════
+// TOOLBAR EVENTS
+// ═══════════════════════════════════════════════════════════
+urlInput.addEventListener('keydown',e=>{ if(e.key==='Enter') navigate(urlInput.value); });
+$('go-btn').addEventListener('click',()=>navigate(urlInput.value));
+btnBack.addEventListener('click',goBack);
+btnFwd.addEventListener('click',goFwd);
+btnRef.addEventListener('click',()=>{
+  if(S.loading){frame.src='about:blank';stopLoad();}
+  else if(S.url) navigate(S.url);
+});
+
+// Console input
+conIn.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    const code=conIn.value.trim(); if(!code) return;
+    S.cmdHist.unshift(code); S.cmdIdx=-1;
+    conIn.value='';
+    addLog('cmd',[code]);
+    try{
+      // indirect eval
+      const res=(0,eval)(code);
+      if(res!==undefined) addLog('ret',[res]);
+    }catch(err){addLog('error',[err.message]);}
+  } else if(e.key==='ArrowUp'){
+    e.preventDefault();
+    S.cmdIdx=Math.min(S.cmdIdx+1,S.cmdHist.length-1);
+    conIn.value=S.cmdHist[S.cmdIdx]||'';
+  } else if(e.key==='ArrowDown'){
+    e.preventDefault();
+    S.cmdIdx=Math.max(S.cmdIdx-1,-1);
+    conIn.value=S.cmdIdx>=0?S.cmdHist[S.cmdIdx]:'';
+  }
+});
+$('console-clear').addEventListener('click',()=>conOut.innerHTML='');
+
+// Network filter
+document.querySelectorAll('.net-filter').forEach(f=>{
+  f.addEventListener('click',()=>{
+    document.querySelectorAll('.net-filter').forEach(x=>x.classList.remove('active'));
+    f.classList.add('active');
+    S.netFilter=f.dataset.filter;
+    netList.querySelectorAll('.nr').forEach(r=>{
+      r.style.display=(S.netFilter==='all'||r.dataset.type===S.netFilter)?'':'none';
+    });
+  });
+});
+$('net-clear').addEventListener('click',()=>{
+  S.netReqs=[];
+  netList.querySelectorAll('.nr').forEach(r=>r.remove());
+});
+
+// ═══════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&e.key==='I')){ e.preventDefault(); toggleDT(); }
+  if(e.key==='F5'){ e.preventDefault(); if(S.url) navigate(S.url); }
+  if(e.altKey&&e.key==='ArrowLeft'){ e.preventDefault(); goBack(); }
+  if(e.altKey&&e.key==='ArrowRight'){ e.preventDefault(); goFwd(); }
+  if(e.ctrlKey&&e.key==='l'){ e.preventDefault(); urlInput.select(); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// DEFAULT HOME PAGE
+// ═══════════════════════════════════════════════════════════
+const homePage=`data:text/html;charset=utf-8,<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0f1117;color:#d4d8f0;font-family:-apple-system,sans-serif;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;text-align:center;padding:24px;}
+.logo{font-size:52px;margin-bottom:12px;}
+h1{font-size:1.8rem;background:linear-gradient(135deg,#4f9eff,#7c5cfc);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;}
+.sub{color:#6b7494;font-size:.9rem;margin-bottom:32px;}
+.features{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:340px;width:100%;}
+.feat{background:#1a1d27;border:1px solid #2e3347;border-radius:10px;
+  padding:14px;text-align:left;}
+.feat-icon{font-size:1.4rem;margin-bottom:6px;}
+.feat-title{font-size:.8rem;font-weight:600;margin-bottom:3px;color:#4f9eff;}
+.feat-desc{font-size:.73rem;color:#6b7494;line-height:1.4;}
+.tip{margin-top:28px;font-size:.78rem;color:#6b7494;
+  background:#1a1d27;border:1px solid #2e3347;border-radius:8px;padding:10px 16px;}
+.tip code{color:#4fcfff;font-family:monospace;}
+</style></head><body>
+<div class="logo">&#128202;</div>
+<h1>DevBrowser</h1>
+<p class="sub">Browser ringan dengan developer tools terintegrasi</p>
+<div class="features">
+<div class="feat"><div class="feat-icon">&#128196;</div>
+  <div class="feat-title">Console</div>
+  <div class="feat-desc">Eksekusi JavaScript secara live</div></div>
+<div class="feat"><div class="feat-icon">&#128268;</div>
+  <div class="feat-title">Elements</div>
+  <div class="feat-desc">Inspect DOM tree real-time</div></div>
+<div class="feat"><div class="feat-icon">&#128246;</div>
+  <div class="feat-title">Network</div>
+  <div class="feat-desc">Monitor semua request HTTP</div></div>
+<div class="feat"><div class="feat-icon">&#128230;</div>
+  <div class="feat-title">Application</div>
+  <div class="feat-desc">Lihat storage, cookie & cache</div></div>
+<div class="feat"><div class="feat-icon">&#9201;</div>
+  <div class="feat-title">Performance</div>
+  <div class="feat-desc">Analisis load time & memory</div></div>
+<div class="feat"><div class="feat-icon">&#128196;</div>
+  <div class="feat-title">Sources</div>
+  <div class="feat-desc">Daftar resource yang dimuat</div></div>
+</div>
+<div class="tip">Tekan <code>F12</code> atau tombol DevTools untuk membuka panel</div>
+</body></html>`;
+
+navigate(homePage);
+</script>
+</body>
+</html>
