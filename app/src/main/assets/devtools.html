@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#222639;
+  --border:#2e3347;--accent:#4f9eff;
+  --text:#d4d8f0;--text2:#6b7494;
+  --err:#f4717a;--warn:#e8a838;--info:#4fcfff;--ok:#4ec9b0;
+  --mono:'Courier New',monospace;
+  --fs:12px; --xs:11px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:var(--fs);overflow:hidden;}
+
+#shell{display:flex;flex-direction:column;height:100%;}
+
+/* ── TABS ── */
+#tabs{
+  display:flex;background:var(--bg);
+  border-bottom:1px solid var(--border);
+  overflow-x:auto;scrollbar-width:none;flex-shrink:0;
+}
+#tabs::-webkit-scrollbar{display:none;}
+.tab{
+  flex-shrink:0;height:36px;padding:0 14px;
+  display:flex;align-items:center;
+  font-size:var(--xs);font-weight:500;color:var(--text2);
+  cursor:pointer;border-bottom:2px solid transparent;
+  white-space:nowrap;-webkit-tap-highlight-color:transparent;
+}
+.tab:active{color:var(--text);}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ── PANELS ── */
+#content{flex:1;min-height:0;position:relative;}
+.panel{display:none;flex-direction:column;position:absolute;inset:0;}
+.panel.on{display:flex;}
+
+/* ── CONSOLE ── */
+#cout{
+  flex:1;min-height:0;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  font-family:var(--mono);font-size:var(--fs);
+}
+#cout::-webkit-scrollbar{width:3px;}
+#cout::-webkit-scrollbar-thumb{background:var(--border);}
+.ce{display:flex;gap:6px;padding:3px 8px;border-bottom:1px solid transparent;line-height:1.5;align-items:flex-start;}
+.ce.log{color:var(--text);}
+.ce.info{color:var(--info);background:rgba(79,207,255,.04);border-color:rgba(79,207,255,.1);}
+.ce.warn{color:var(--warn);background:rgba(232,168,56,.04);border-color:rgba(232,168,56,.15);}
+.ce.error{color:var(--err);background:rgba(244,113,122,.04);border-color:rgba(244,113,122,.15);}
+.ce.ret{color:var(--info);}
+.ce.cmd{color:#9cdcfe;}
+.ci{opacity:.5;font-size:10px;margin-top:2px;flex-shrink:0;min-width:10px;}
+.ct{flex:1;word-break:break-all;white-space:pre-wrap;}
+#cin-wrap{
+  flex-shrink:0;display:flex;align-items:center;gap:6px;
+  border-top:1px solid var(--border);padding:0 8px;
+  background:var(--bg);height:40px;
+}
+#cprompt{color:var(--accent);font-family:var(--mono);font-size:15px;}
+#cin{
+  flex:1;background:none;border:none;outline:none;
+  color:#9cdcfe;font-family:var(--mono);font-size:var(--fs);
+  caret-color:var(--accent);height:100%;
+  -webkit-appearance:none;
+}
+#clr{background:none;border:none;color:var(--text2);font-size:16px;cursor:pointer;padding:2px;-webkit-tap-highlight-color:transparent;}
+#clr:active{color:var(--err);}
+
+/* ── NETWORK ── */
+#net-bar{
+  flex-shrink:0;display:flex;align-items:center;gap:4px;
+  padding:5px 8px;border-bottom:1px solid var(--border);background:var(--bg);
+  overflow-x:auto;scrollbar-width:none;
+}
+#net-bar::-webkit-scrollbar{display:none;}
+.nf{flex-shrink:0;height:24px;padding:0 8px;font-size:var(--xs);color:var(--text2);cursor:pointer;border-radius:4px;border:1px solid transparent;display:flex;align-items:center;-webkit-tap-highlight-color:transparent;}
+.nf.on{background:var(--accent);color:#fff;}
+.nf:active:not(.on){background:var(--surface2);}
+#nclr{margin-left:auto;flex-shrink:0;height:24px;padding:0 8px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:var(--xs);cursor:pointer;-webkit-tap-highlight-color:transparent;}
+#nclr:active{color:var(--text);}
+#nlist{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#nlist::-webkit-scrollbar{width:3px;}
+#nlist::-webkit-scrollbar-thumb{background:var(--border);}
+.nh{display:grid;grid-template-columns:1fr 46px 44px 52px;padding:3px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);background:var(--surface2);position:sticky;top:0;z-index:1;}
+.nr{display:grid;grid-template-columns:1fr 46px 44px 52px;padding:4px 8px;font-size:var(--xs);font-family:var(--mono);border-bottom:1px solid rgba(46,51,71,.5);cursor:pointer;align-items:center;-webkit-tap-highlight-color:transparent;}
+.nr:active{background:var(--surface2);}
+.nu{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ok{color:var(--ok);}.er{color:var(--err);}.pe{color:var(--warn);}
+
+/* ── ELEMENTS ── */
+#dom-bar{flex-shrink:0;padding:5px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:var(--xs);color:var(--info);background:var(--bg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#dom-panel{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px;font-family:var(--mono);font-size:var(--xs);}
+#dom-panel::-webkit-scrollbar{width:3px;}
+#dom-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.dn{padding:2px 4px 2px 16px;cursor:pointer;position:relative;line-height:1.7;border-radius:3px;-webkit-tap-highlight-color:transparent;}
+.dn:active{background:rgba(255,255,255,.04);}
+.dn.sel{background:rgba(79,158,255,.15);}
+.dtg{color:#4ec9b0;}.dan{color:#9cdcfe;}.dav{color:#ce9178;}.dtx{color:var(--text2);}
+.dtog{position:absolute;left:2px;top:50%;transform:translateY(-50%);color:var(--text2);font-size:9px;}
+.refresh-btn{
+  float:right;background:var(--surface2);border:1px solid var(--border);
+  color:var(--accent);border-radius:4px;padding:2px 8px;font-size:var(--xs);
+  cursor:pointer;-webkit-tap-highlight-color:transparent;margin-left:6px;
+}
+.refresh-btn:active{background:#2a3050;}
+
+/* ── STORAGE ── */
+#st-panel{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px;}
+#st-panel::-webkit-scrollbar{width:3px;}
+#st-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.st-sec{margin-bottom:16px;}
+.st-h{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.st-tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:var(--xs);}
+.st-tbl th{text-align:left;color:var(--text2);padding:3px 8px;border-bottom:1px solid var(--border);font-weight:normal;}
+.st-tbl td{padding:3px 8px;border-bottom:1px solid rgba(46,51,71,.4);overflow:hidden;max-width:140px;text-overflow:ellipsis;white-space:nowrap;}
+.st-tbl tr:active td{background:var(--surface2);}
+.empty{color:var(--text2);font-size:var(--xs);padding:6px 4px;}
+.st-ref{background:none;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:2px;-webkit-tap-highlight-color:transparent;}
+.st-ref:active{color:var(--accent);}
+
+/* ── PERF ── */
+#perf-panel{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#pg{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;}
+.pc{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
+.pl{font-size:10px;color:var(--text2);margin-bottom:4px;}
+.pv{font-size:16px;font-weight:700;color:var(--accent);}
+#pr{padding:0 10px 10px;}
+.rr{display:flex;align-items:center;gap:6px;padding:2px 0;font-family:var(--mono);}
+.rn{width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);}
+.rbw{flex:1;background:var(--border);border-radius:2px;height:3px;}
+.rb{height:3px;border-radius:2px;background:var(--accent);}
+.rt2{color:var(--info);min-width:40px;text-align:right;}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="tabs">
+    <div class="tab on" data-t="console">Console</div>
+    <div class="tab" data-t="network">Network</div>
+    <div class="tab" data-t="dom">Elements</div>
+    <div class="tab" data-t="storage">Storage</div>
+    <div class="tab" data-t="perf">Perf</div>
+  </div>
+  <div id="content">
+
+    <!-- CONSOLE -->
+    <div class="panel on" id="p-console">
+      <div id="cout"></div>
+      <div id="cin-wrap">
+        <span id="cprompt">&gt;</span>
+        <input id="cin" type="text" placeholder="Jalankan JavaScript di halaman..."
+          autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"/>
+        <button id="clr">🗑</button>
+      </div>
+    </div>
+
+    <!-- NETWORK -->
+    <div class="panel" id="p-network">
+      <div id="net-bar">
+        <span class="nf on" data-f="all">All</span>
+        <span class="nf" data-f="fetch">Fetch</span>
+        <span class="nf" data-f="xhr">XHR</span>
+        <button id="nclr">Clear</button>
+      </div>
+      <div id="nlist">
+        <div class="nh"><span>URL</span><span>Status</span><span>Type</span><span>Time</span></div>
+      </div>
+    </div>
+
+    <!-- DOM / ELEMENTS -->
+    <div class="panel" id="p-dom">
+      <div id="dom-bar">
+        Buka tab Elements
+        <button class="refresh-btn" onclick="Android.getDom()">⟳ Refresh</button>
+      </div>
+      <div id="dom-panel"></div>
+    </div>
+
+    <!-- STORAGE -->
+    <div class="panel" id="p-storage">
+      <div id="st-panel">
+        <div class="st-sec">
+          <div class="st-h">📦 localStorage <button class="st-ref" onclick="Android.refreshStorage()">⟳</button></div>
+          <div id="ls-out"></div>
+        </div>
+        <div class="st-sec">
+          <div class="st-h">⏱ sessionStorage</div>
+          <div id="ss-out"></div>
+        </div>
+        <div class="st-sec">
+          <div class="st-h">🍪 Cookies</div>
+          <div id="ck-out"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PERF -->
+    <div class="panel" id="p-perf">
+      <div id="perf-panel">
+        <div id="pg"></div>
+        <div id="pr"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('p-' + t.dataset.t).classList.add('on');
+    if(t.dataset.t === 'storage') Android.refreshStorage();
+    if(t.dataset.t === 'perf') Android.getPerf();
+    if(t.dataset.t === 'dom') Android.getDom();
+  });
+});
+
+// ── Console ───────────────────────────────────────────────────────────────────
+const cout = document.getElementById('cout');
+const icons = {log:'·', info:'ℹ', warn:'▲', error:'✖', ret:'←', cmd:'›'};
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.dtConsole = function(type, msg) {
+  const d = document.createElement('div');
+  d.className = 'ce ' + (type==='debug'?'log':type);
+  d.innerHTML = `<span class="ci">${icons[type]||'·'}</span><span class="ct">${esc(msg)}</span>`;
+  cout.appendChild(d);
+  cout.scrollTop = cout.scrollHeight;
+};
+
+window.dtLog = function(msg) { window.dtConsole('info', msg); };
+
+// Console input
+const cin = document.getElementById('cin');
+const hist = [], hState = {i:-1};
+
+cin.addEventListener('keydown', e => {
+  if(e.key === 'Enter') {
+    const code = cin.value.trim();
+    if(!code) return;
+    hist.unshift(code); hState.i = -1;
+    cin.value = '';
+    window.dtConsole('cmd', code);
+    Android.evalInPage(code);
+  } else if(e.key === 'ArrowUp') {
+    e.preventDefault();
+    hState.i = Math.min(hState.i + 1, hist.length - 1);
+    cin.value = hist[hState.i] || '';
+  } else if(e.key === 'ArrowDown') {
+    e.preventDefault();
+    hState.i = Math.max(hState.i - 1, -1);
+    cin.value = hState.i >= 0 ? hist[hState.i] : '';
+  }
+});
+
+document.getElementById('clr').addEventListener('click', () => cout.innerHTML = '');
+
+// ── Network ───────────────────────────────────────────────────────────────────
+const nlist = document.getElementById('nlist');
+let netFilter = 'all';
+
+window.dtNetwork = function(method, url, status, duration, type) {
+  const name = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] || url;
+  const cls = status === 'ERR' || parseInt(status) >= 400 ? 'er' :
+              parseInt(status) === 0 ? 'pe' : 'ok';
+  const d = document.createElement('div');
+  d.className = 'nr'; d.dataset.type = type;
+  d.innerHTML = `<span class="nu" title="${esc(url)}">${esc(name.slice(-36))}</span>
+    <span class="${cls}">${esc(status)}</span>
+    <span>${esc(type)}</span>
+    <span>${esc(duration)}</span>`;
+  d.addEventListener('click', () => {
+    window.dtConsole('info', `[Net] ${method} ${url} → ${status} (${duration})`);
+    switchTab('console');
+  });
+  if(netFilter === 'all' || netFilter === type) nlist.appendChild(d);
+};
+
+document.querySelectorAll('.nf').forEach(f => {
+  f.addEventListener('click', () => {
+    document.querySelectorAll('.nf').forEach(x => x.classList.remove('on'));
+    f.classList.add('on');
+    netFilter = f.dataset.f;
+    nlist.querySelectorAll('.nr').forEach(r => {
+      r.style.display = (netFilter === 'all' || r.dataset.type === netFilter) ? '' : 'none';
+    });
+  });
+});
+document.getElementById('nclr').addEventListener('click', () =>
+  nlist.querySelectorAll('.nr').forEach(r => r.remove()));
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+window.dtDom = function(node) {
+  const panel = document.getElementById('dom-panel');
+  panel.innerHTML = '';
+  document.getElementById('dom-bar').textContent = 'DOM Tree';
+  renderNode(node, panel, 0);
+};
+
+function renderNode(node, container, depth) {
+  if(!node) return;
+  if(node.type === 'text') {
+    const d = document.createElement('div');
+    d.className = 'dn dtx'; d.style.paddingLeft = (depth*12+14)+'px';
+    d.textContent = '"' + node.text + '"';
+    container.appendChild(d); return;
+  }
+  const hasKids = node.children && node.children.length > 0;
+  let attrs = '';
+  for(const [k,v] of Object.entries(node.attrs||{})) {
+    attrs += ` <span class="dan">${esc(k)}</span>=<span class="dav">"${esc(v.slice(0,40))}"</span>`;
+  }
+  const d = document.createElement('div');
+  d.className = 'dn'; d.style.paddingLeft = (depth*12+14)+'px';
+  d.innerHTML = (hasKids ? `<span class="dtog" data-x="1">▼</span>` : '') +
+    `<span class="dtg">&lt;${esc(node.tag)}</span>${attrs}<span class="dtg">&gt;</span>`;
+  const kc = document.createElement('div');
+  d.querySelector('.dtog')?.addEventListener('click', ev => {
+    ev.stopPropagation();
+    const t = ev.target, x = t.dataset.x === '1';
+    t.dataset.x = x ? '0' : '1'; t.textContent = x ? '▶' : '▼';
+    kc.style.display = x ? 'none' : '';
+  });
+  d.addEventListener('click', () => {
+    document.querySelectorAll('.dn.sel').forEach(e => e.classList.remove('sel'));
+    d.classList.add('sel');
+    document.getElementById('dom-bar').textContent = `<${node.tag}> · ${(node.children||[]).length} children`;
+  });
+  container.appendChild(d);
+  if(hasKids) {
+    for(const c of node.children) renderNode(c, kc, depth+1);
+    const cl = document.createElement('div');
+    cl.className = 'dn'; cl.style.paddingLeft = (depth*12+14)+'px';
+    cl.innerHTML = `<span class="dtg">&lt;/${esc(node.tag)}&gt;</span>`;
+    kc.appendChild(cl);
+    container.appendChild(kc);
+  }
+}
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+window.dtStorage = function(data) {
+  // data is parsed JSON: {ls:{}, ss:{}, ck:""}
+  try {
+    const obj = typeof data === 'string' ? JSON.parse(data) : data;
+    renderSt('ls-out', obj.ls || {});
+    renderSt('ss-out', obj.ss || {});
+    const ckEl = document.getElementById('ck-out');
+    if(!obj.ck) { ckEl.innerHTML='<div class="empty">Tidak ada cookie</div>'; return; }
+    let h = '<table class="st-tbl"><tr><th>Name</th><th>Value</th></tr>';
+    obj.ck.split(';').forEach(c => {
+      const [n,...vs] = c.trim().split('=');
+      if(n) h += `<tr><td>${esc(n)}</td><td>${esc(vs.join('=').slice(0,36))}</td></tr>`;
+    });
+    ckEl.innerHTML = h + '</table>';
+  } catch(e) {}
+};
+
+function renderSt(id, obj) {
+  const el = document.getElementById(id);
+  const keys = Object.keys(obj);
+  if(!keys.length) { el.innerHTML='<div class="empty">Tidak ada item</div>'; return; }
+  let h = '<table class="st-tbl"><tr><th>Key</th><th>Value</th></tr>';
+  keys.forEach(k => {
+    const v = String(obj[k]||'');
+    h += `<tr><td title="${esc(k)}">${esc(k.slice(0,28))}</td><td title="${esc(v)}">${esc(v.slice(0,40))}${v.length>40?'…':''}</td></tr>`;
+  });
+  el.innerHTML = h + '</table>';
+}
+
+// ── Performance ───────────────────────────────────────────────────────────────
+window.dtPerf = function(data) {
+  try {
+    const d = typeof data === 'string' ? JSON.parse(data) : data;
+    const metrics = [
+      ['DNS', d.dns+'ms'], ['TCP', d.tcp+'ms'], ['TTFB', d.ttfb+'ms'],
+      ['DOM Ready', d.dom+'ms'], ['Load', d.load+'ms'], ['Resources', d.res+' file']
+    ];
+    document.getElementById('pg').innerHTML = metrics.map(([l,v]) =>
+      `<div class="pc"><div class="pl">${l}</div><div class="pv">${v}</div></div>`
+    ).join('');
+    const rs = d.resources || [];
+    const max = Math.max(...rs.map(r=>r.dur), 1);
+    document.getElementById('pr').innerHTML = rs.length ?
+      '<div style="font-size:10px;color:var(--text2);text-transform:uppercase;padding:6px 0 4px">Resource Timing</div>'+
+      rs.map(r => `<div class="rr">
+        <span class="rn" title="${esc(r.name)}">${esc(r.name)}</span>
+        <div class="rbw"><div class="rb" style="width:${Math.round(r.dur/max*100)}%"></div></div>
+        <span class="rt2">${r.dur}ms</span>
+      </div>`).join('') : '';
+  } catch(e) {}
+};
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('on', t.dataset.t === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('on', p.id === 'p-' + name);
+  });
+}
+
+window.dtRefresh = function() {
+  const activeTab = document.querySelector('.tab.on')?.dataset.t;
+  if(activeTab === 'storage') Android.refreshStorage();
+  if(activeTab === 'perf') Android.getPerf();
+  if(activeTab === 'dom') Android.getDom();
+};
+
+// Welcome message
+window.dtConsole('info', 'DevBrowser siap. Buka localhost di address bar atas.');
+window.dtConsole('log', 'Console ini akan menampilkan log dari halaman yang dibuka.');
+</script>
+</body>
+</html>
