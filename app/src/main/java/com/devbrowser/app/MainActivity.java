@@ -14,17 +14,19 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.ConsoleMessage;
+import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -38,56 +40,65 @@ public class MainActivity extends Activity {
     WebView devToolsView;
     LinearLayout devToolsPanel;
     EditText urlInput;
-    TextView btnBack, btnFwd, btnRefresh, btnDevTools, btnHistory;
+    TextView btnBack, btnFwd, btnRefresh, btnDevTools, btnHistory, btnCookie;
     ProgressBar progressBar;
     boolean devToolsOpen = false;
-    boolean isHomePage = true;   // true while splash is shown, skip url update
+    boolean isHomePage = true;
+    boolean cookiesEnabled = true;
 
-    // ── Browsing history ──────────────────────────────────────────────────────
+    // ── Quick-access ports ────────────────────────────────────────────────────
+    static final int[][] PORT_GROUPS = {
+        {3000, 3001, 3030, 3333},
+        {4000, 4200, 4321, 4173},
+        {5000, 5173, 5174, 5500},
+        {8000, 8080, 8081, 8888},
+        {9000, 9090, 9229, 19006},
+    };
+    static final String[] PORT_LABELS = {
+        "React / Next.js",
+        "Angular / Astro / Vite preview",
+        "Flask / Vue / Vite / LiveServer",
+        "Django / Spring / Alt HTTP",
+        "Various / RN Metro",
+    };
+
+    // ── History ───────────────────────────────────────────────────────────────
     static class HistoryEntry {
-        String url;
-        String title;
-        String time;
-        HistoryEntry(String url, String title, String time) {
-            this.url = url; this.title = title; this.time = time;
-        }
+        String url, title, time;
+        HistoryEntry(String u, String t, String ts) { url=u; title=t; time=ts; }
     }
     final List<HistoryEntry> history = new ArrayList<>();
 
     // ── JavaScript Bridge ──────────────────────────────────────────────────────
     public class DevBridge {
-
         @JavascriptInterface
         public void logConsole(String type, String message) {
             runOnUiThread(() -> {
                 String safe = message.replace("\\","\\\\").replace("'","\\'")
                                      .replace("\n","\\n").replace("\r","");
                 devToolsView.evaluateJavascript(
-                    "window.dtConsole&&window.dtConsole('" + type + "','" + safe + "')", null);
+                    "window.dtConsole&&window.dtConsole('"+type+"','"+safe+"')", null);
             });
         }
-
         @JavascriptInterface
         public void logNetwork(String method, String url, String status, String duration, String type) {
             runOnUiThread(() -> {
                 String su = url.replace("\\","\\\\").replace("'","\\'");
                 devToolsView.evaluateJavascript(
-                    "window.dtNetwork&&window.dtNetwork('" + method + "','" + su +
-                    "','" + status + "','" + duration + "','" + type + "')", null);
+                    "window.dtNetwork&&window.dtNetwork('"+method+"','"+su+
+                    "','"+status+"','"+duration+"','"+type+"')", null);
             });
         }
-
         @JavascriptInterface
         public void evalInPage(String code) {
             runOnUiThread(() -> browserView.evaluateJavascript(code, value -> {
                 if (value != null && !value.equals("null")) {
                     String safe = value.replace("\\","\\\\").replace("'","\\'").replace("\n","\\n");
                     devToolsView.evaluateJavascript(
-                        "window.dtConsole&&window.dtConsole('ret','" + safe + "')", null);
+                        "window.dtConsole&&window.dtConsole('ret','"+safe+"')", null);
                 }
             }));
         }
-
         @JavascriptInterface
         public void refreshStorage() {
             runOnUiThread(() -> browserView.evaluateJavascript(
@@ -97,33 +108,29 @@ public class MainActivity extends Activity {
                 "return JSON.stringify({ls:ls,ss:ss,ck:ck});})()",
                 value -> {
                     if (value != null && !value.equals("null"))
-                        devToolsView.evaluateJavascript("window.dtStorage&&window.dtStorage(" + value + ")", null);
+                        devToolsView.evaluateJavascript("window.dtStorage&&window.dtStorage("+value+")", null);
                 }
             ));
         }
-
         @JavascriptInterface
         public void getPerf() {
             runOnUiThread(() -> browserView.evaluateJavascript(
                 "(function(){var n=performance.getEntriesByType('navigation')[0]||{};" +
                 "var r=performance.getEntriesByType('resource');" +
-                "return JSON.stringify({" +
-                "dns:Math.round((n.domainLookupEnd||0)-(n.domainLookupStart||0))," +
+                "return JSON.stringify({dns:Math.round((n.domainLookupEnd||0)-(n.domainLookupStart||0))," +
                 "tcp:Math.round((n.connectEnd||0)-(n.connectStart||0))," +
                 "ttfb:Math.round((n.responseStart||0)-(n.fetchStart||0))," +
                 "dom:Math.round((n.domContentLoadedEventEnd||0)-(n.fetchStart||0))," +
-                "load:Math.round((n.loadEventEnd||0)-(n.fetchStart||0))," +
-                "res:r.length," +
+                "load:Math.round((n.loadEventEnd||0)-(n.fetchStart||0)),res:r.length," +
                 "resources:r.slice(0,12).map(function(x){return{" +
                 "name:x.name.split('/').pop().split('?')[0].substring(0,24)||'?'," +
                 "dur:Math.round(x.duration),size:Math.round(x.encodedBodySize/1024)||0};})});})()",
                 value -> {
                     if (value != null && !value.equals("null"))
-                        devToolsView.evaluateJavascript("window.dtPerf&&window.dtPerf(" + value + ")", null);
+                        devToolsView.evaluateJavascript("window.dtPerf&&window.dtPerf("+value+")", null);
                 }
             ));
         }
-
         @JavascriptInterface
         public void getDom() {
             runOnUiThread(() -> browserView.evaluateJavascript(
@@ -135,13 +142,13 @@ public class MainActivity extends Activity {
                 "return{type:'elem',tag:n.tagName.toLowerCase(),attrs:a,children:k};})(document.documentElement,0)",
                 value -> {
                     if (value != null && !value.equals("null"))
-                        devToolsView.evaluateJavascript("window.dtDom&&window.dtDom(" + value + ")", null);
+                        devToolsView.evaluateJavascript("window.dtDom&&window.dtDom("+value+")", null);
                 }
             ));
         }
     }
 
-    // ── Script injected into every loaded page ────────────────────────────────
+    // ── Inject script ─────────────────────────────────────────────────────────
     private static final String INJECT_SCRIPT =
         "(function(){if(window.__devInjected)return;window.__devInjected=true;" +
         "['log','warn','error','info','debug'].forEach(function(m){" +
@@ -150,34 +157,19 @@ public class MainActivity extends Activity {
         "try{return typeof a==='object'?JSON.stringify(a):String(a);}catch(e){return String(a);}}).join(' ');" +
         "try{Android.logConsole(m==='debug'?'log':m,msg);}catch(e){}" +
         "return o.apply(console,arguments);};});" +
-        "window.onerror=function(msg,src,line){try{Android.logConsole('error',msg+' ('+src+':'+line+')');}catch(e){}};" +
-        "window.addEventListener('unhandledrejection',function(e){try{Android.logConsole('error','Uncaught Promise: '+e.reason);}catch(ex){}});" +
-        "var _f=window.fetch;window.fetch=function(input,init){" +
-        "var url=typeof input==='string'?input:(input&&input.url)||'?';" +
-        "var method=(init&&init.method)||'GET';var t0=Date.now();" +
-        "return _f.apply(this,arguments).then(function(r){" +
-        "try{Android.logNetwork(method,url,String(r.status),String(Date.now()-t0)+'ms','fetch');}catch(e){}return r;" +
-        "}).catch(function(e){try{Android.logNetwork(method,url,'ERR',String(Date.now()-t0)+'ms','fetch');}catch(ex){}throw e;});};" +
-        "var _X=window.XMLHttpRequest;window.XMLHttpRequest=function(){" +
-        "var x=new _X(),method='GET',url='',t0;" +
-        "var _o=x.open.bind(x);x.open=function(m,u){method=m;url=u;t0=Date.now();return _o.apply(x,arguments);};" +
-        "x.addEventListener('loadend',function(){try{Android.logNetwork(method,url,String(x.status),String(Date.now()-t0)+'ms','xhr');}catch(e){}});" +
+        "window.onerror=function(msg,src,line){try{Android.logConsole('error',msg+' ('+src+':'+line+')');}catch(e){}};"+
+        "window.addEventListener('unhandledrejection',function(e){try{Android.logConsole('error','Uncaught Promise: '+e.reason);}catch(ex){}});"+
+        "var _f=window.fetch;window.fetch=function(input,init){"+
+        "var url=typeof input==='string'?input:(input&&input.url)||'?';"+
+        "var method=(init&&init.method)||'GET';var t0=Date.now();"+
+        "return _f.apply(this,arguments).then(function(r){"+
+        "try{Android.logNetwork(method,url,String(r.status),String(Date.now()-t0)+'ms','fetch');}catch(e){}return r;"+
+        "}).catch(function(e){try{Android.logNetwork(method,url,'ERR',String(Date.now()-t0)+'ms','fetch');}catch(ex){}throw e;});};"+
+        "var _X=window.XMLHttpRequest;window.XMLHttpRequest=function(){"+
+        "var x=new _X(),method='GET',url='',t0;"+
+        "var _o=x.open.bind(x);x.open=function(m,u){method=m;url=u;t0=Date.now();return _o.apply(x,arguments);};"+
+        "x.addEventListener('loadend',function(){try{Android.logNetwork(method,url,String(x.status),String(Date.now()-t0)+'ms','xhr');}catch(e){}});"+
         "return x;};})();";
-
-    // ── Splash HTML (shown before any navigation) ─────────────────────────────
-    private static final String SPLASH_HTML =
-        "<!DOCTYPE html><html><body style='" +
-        "background:#0f1117;color:#6b7494;font-family:sans-serif;" +
-        "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-        "height:100vh;margin:0;text-align:center;padding:20px;box-sizing:border-box'>" +
-        "<div style='font-size:52px;margin-bottom:16px'>⚡</div>" +
-        "<div style='font-size:20px;color:#d4d8f0;font-weight:600;margin-bottom:8px'>DevBrowser</div>" +
-        "<div style='font-size:13px;line-height:1.8;max-width:280px'>" +
-        "Masukkan port atau URL di address bar<br>" +
-        "<span style='color:#4f9eff;font-family:monospace'>3000</span> &nbsp;·&nbsp; " +
-        "<span style='color:#4f9eff;font-family:monospace'>localhost:8080</span> &nbsp;·&nbsp; " +
-        "<span style='color:#4f9eff;font-family:monospace'>http://192.168.x.x:5173</span>" +
-        "</div></body></html>";
 
     // ─────────────────────────────────────────────────────────────────────────
     @SuppressLint("SetJavaScriptEnabled")
@@ -241,10 +233,7 @@ public class MainActivity extends Activity {
             }
             return false;
         });
-        // Tap on URL bar = select all for easy replace
-        urlInput.setOnFocusChangeListener((v, focused) -> {
-            if (focused) urlInput.selectAll();
-        });
+        urlInput.setOnFocusChangeListener((v, focused) -> { if (focused) urlInput.selectAll(); });
         toolbar.addView(urlInput);
 
         btnRefresh = makeIconBtn("⟳");
@@ -255,23 +244,18 @@ public class MainActivity extends Activity {
         });
         toolbar.addView(btnRefresh);
 
+        // Cookie button
+        btnCookie = makeTagBtn("🍪", "#4ec9b0");
+        btnCookie.setOnClickListener(v -> showCookieMenu());
+        toolbar.addView(btnCookie);
+
         // History button
         btnHistory = makeIconBtn("☰");
         btnHistory.setOnClickListener(v -> showHistory());
         toolbar.addView(btnHistory);
 
         // DevTools button
-        btnDevTools = new TextView(this);
-        btnDevTools.setText("DEV");
-        btnDevTools.setTextColor(Color.parseColor("#4f9eff"));
-        btnDevTools.setTextSize(11f);
-        btnDevTools.setTypeface(null, Typeface.BOLD);
-        btnDevTools.setPadding(dp(10), dp(8), dp(10), dp(8));
-        android.graphics.drawable.GradientDrawable devBg = new android.graphics.drawable.GradientDrawable();
-        devBg.setColor(Color.parseColor("#222639"));
-        devBg.setCornerRadius(dp(7));
-        devBg.setStroke(dp(1), Color.parseColor("#2e3347"));
-        btnDevTools.setBackground(devBg);
+        btnDevTools = makeTagBtn("DEV", "#4f9eff");
         btnDevTools.setOnClickListener(v -> toggleDevTools());
         toolbar.addView(btnDevTools);
 
@@ -304,11 +288,9 @@ public class MainActivity extends Activity {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
         devToolsPanel.setVisibility(View.GONE);
 
-        // Drag handle
         View handle = new View(this);
         handle.setLayoutParams(new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(18)));
-        handle.setBackgroundColor(Color.TRANSPARENT);
         final int[] dragState = {0, dp(320)};
         handle.setOnTouchListener((v, ev) -> {
             switch (ev.getAction()) {
@@ -338,212 +320,93 @@ public class MainActivity extends Activity {
         root.addView(devToolsPanel);
 
         setContentView(root);
-
         devToolsView.loadUrl("file:///android_asset/devtools.html");
 
-        // Load splash WITHOUT touching urlInput
+        // Show splash
         isHomePage = true;
-        browserView.loadDataWithBaseURL(null, SPLASH_HTML, "text/html", "utf-8", null);
+        showSplash();
     }
 
-    // ── Browser WebView setup ──────────────────────────────────────────────────
-    @SuppressLint("SetJavaScriptEnabled")
-    private void setupBrowserView() {
-        WebSettings s = browserView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setAllowContentAccess(true);
-        s.setAllowFileAccessFromFileURLs(true);
-        s.setAllowUniversalAccessFromFileURLs(true);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        s.setUseWideViewPort(true);
-        s.setLoadWithOverviewMode(true);
-        s.setBuiltInZoomControls(true);
-        s.setDisplayZoomControls(false);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
-        browserView.addJavascriptInterface(new DevBridge(), "Android");
+    // ── Splash page with port quick-launch grid ────────────────────────────────
+    private void showSplash() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html><html><head>")
+          .append("<meta charset='UTF-8'>")
+          .append("<meta name='viewport' content='width=device-width,initial-scale=1'>")
+          .append("<style>")
+          .append("*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}")
+          .append("body{background:#0f1117;color:#d4d8f0;font-family:-apple-system,sans-serif;")
+          .append("min-height:100vh;padding:24px 16px;overflow-y:auto}")
+          .append(".hero{text-align:center;padding:28px 0 24px}")
+          .append(".logo{font-size:52px;margin-bottom:10px}")
+          .append(".title{font-size:22px;font-weight:700;color:#d4d8f0;margin-bottom:4px}")
+          .append(".sub{font-size:13px;color:#6b7494;line-height:1.6}")
+          .append(".section{margin-bottom:20px}")
+          .append(".section-label{font-size:10px;color:#6b7494;text-transform:uppercase;")
+          .append("letter-spacing:.8px;margin-bottom:8px;padding:0 2px}")
+          .append(".port-row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}")
+          .append(".port-btn{flex:1;min-width:60px;background:#1a1d27;border:1.5px solid #2e3347;")
+          .append("border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;")
+          .append("transition:border-color .15s,background .15s;color:#d4d8f0}")
+          .append(".port-btn:active{background:#222639;border-color:#4f9eff}")
+          .append(".port-num{font-size:16px;font-weight:700;font-family:monospace;color:#4f9eff;margin-bottom:3px}")
+          .append(".port-tag{font-size:10px;color:#6b7494;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}")
+          .append(".divider{height:1px;background:#2e3347;margin:20px 0}")
+          .append(".tip{background:#1a1d27;border:1px solid #2e3347;border-radius:10px;")
+          .append("padding:14px;font-size:12px;color:#6b7494;line-height:1.7}")
+          .append(".tip code{color:#4fcfff;font-family:monospace;background:#0f1117;")
+          .append("padding:1px 5px;border-radius:4px}")
+          .append("</style></head><body>")
+          .append("<div class='hero'>")
+          .append("<div class='logo'>⚡</div>")
+          .append("<div class='title'>DevBrowser</div>")
+          .append("<div class='sub'>Browser untuk debug &amp; preview proyek lokal</div>")
+          .append("</div>");
 
-        browserView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
-                // Let WebView handle it; onPageStarted will update URL bar
-                return false;
+        // Port groups
+        String[][] portTags = {
+            {"React","Next.js","Gatsby","CRA"},
+            {"Angular","Astro","Vite prev","Custom"},
+            {"Flask","Vue CLI","Vite","LiveServer"},
+            {"Django","Spring","Apache","Alt"},
+            {"Custom","Nodemon","Node Dbg","RN Metro"},
+        };
+
+        for (int g = 0; g < PORT_GROUPS.length; g++) {
+            sb.append("<div class='section'>")
+              .append("<div class='section-label'>").append(PORT_LABELS[g]).append("</div>")
+              .append("<div class='port-row'>");
+            for (int p = 0; p < PORT_GROUPS[g].length; p++) {
+                int port = PORT_GROUPS[g][p];
+                String tag = portTags[g][p];
+                sb.append("<div class='port-btn' onclick='Android.openPort(").append(port).append(")'> ")
+                  .append("<div class='port-num'>").append(port).append("</div>")
+                  .append("<div class='port-tag'>").append(tag).append("</div>")
+                  .append("</div>");
             }
-
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                if (isHomePage) return;  // Don't update bar for splash
-                progressBar.setVisibility(View.VISIBLE);
-                progressBar.setProgress(10);
-                // Only update bar if user isn't typing in it
-                if (!urlInput.hasFocus()) urlInput.setText(url);
-                updateNavButtons();
-                devToolsView.evaluateJavascript(
-                    "window.dtLog&&window.dtLog('→ " + escJs(url) + "')", null);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                if (isHomePage) return;
-                progressBar.setVisibility(View.INVISIBLE);
-                progressBar.setProgress(100);
-                // Always update bar on finish (final URL after redirects)
-                urlInput.setText(url);
-                updateNavButtons();
-                view.evaluateJavascript(INJECT_SCRIPT, null);
-                // Save to history
-                view.evaluateJavascript("document.title", title -> {
-                    String t = (title != null ? title : "").replaceAll("^\"|\"$", "");
-                    if (t.isEmpty()) t = url;
-                    String finalTitle = t;
-                    String time = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date());
-                    runOnUiThread(() -> {
-                        // Remove duplicate if same URL already at top
-                        if (!history.isEmpty() && history.get(0).url.equals(url))
-                            history.remove(0);
-                        history.add(0, new HistoryEntry(url, finalTitle, time));
-                        if (history.size() > 100) history.remove(history.size() - 1);
-                    });
-                });
-                devToolsView.evaluateJavascript(
-                    "window.dtLog&&window.dtLog('✓ " + escJs(url) + "')", null);
-            }
-
-            @Override
-            public void onReceivedError(WebView view, int errorCode,
-                    String description, String failingUrl) {
-                if (isHomePage) return;
-                devToolsView.evaluateJavascript(
-                    "window.dtConsole&&window.dtConsole('error','Load error " +
-                    errorCode + ": " + escJs(description) + "')", null);
-            }
-        });
-
-        browserView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onProgressChanged(WebView view, int progress) {
-                if (isHomePage) return;
-                progressBar.setProgress(progress);
-                progressBar.setVisibility(progress == 100 ? View.INVISIBLE : View.VISIBLE);
-            }
-            @Override
-            public boolean onConsoleMessage(ConsoleMessage msg) { return false; }
-            @Override
-            public void onReceivedTitle(WebView view, String title) {
-                // Title update from JS navigation (SPA)
-                if (!isHomePage && !urlInput.hasFocus()) {
-                    String url = view.getUrl();
-                    if (url != null) urlInput.setText(url);
-                }
-            }
-        });
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private void setupDevToolsView() {
-        WebSettings s = devToolsView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setAllowFileAccessFromFileURLs(true);
-        s.setAllowUniversalAccessFromFileURLs(true);
-        devToolsView.setBackgroundColor(Color.parseColor("#0f1117"));
-        devToolsView.addJavascriptInterface(new DevBridge(), "Android");
-    }
-
-    // ── Navigate ───────────────────────────────────────────────────────────────
-    private void navigateTo(String input) {
-        String url = input.trim();
-        if (url.isEmpty()) return;
-        if (url.matches("\\d+"))                      url = "http://localhost:" + url;
-        else if (url.matches("localhost(:\\d+)?.*"))   url = "http://" + url;
-        else if (url.matches("\\d+\\.\\d+\\.\\d+\\.\\d+.*")) url = "http://" + url;
-        else if (!url.startsWith("http://") && !url.startsWith("https://")
-              && !url.startsWith("file://") && !url.startsWith("data:"))
-            url = "http://" + url;
-
-        isHomePage = false;
-        urlInput.setText(url);
-        browserView.loadUrl(url);
-    }
-
-    // ── History dialog ─────────────────────────────────────────────────────────
-    private void showHistory() {
-        if (history.isEmpty()) {
-            new AlertDialog.Builder(this)
-                .setTitle("Riwayat")
-                .setMessage("Belum ada riwayat penjelajahan.")
-                .setPositiveButton("OK", null)
-                .show();
-            return;
+            sb.append("</div></div>");
         }
-        String[] items = new String[history.size()];
-        for (int i = 0; i < history.size(); i++) {
-            HistoryEntry e = history.get(i);
-            items[i] = e.time + "  " + e.title + "\n" + e.url;
-        }
-        new AlertDialog.Builder(this)
-            .setTitle("Riwayat (" + history.size() + ")")
-            .setItems(items, (dialog, which) -> {
-                navigateTo(history.get(which).url);
-                hideKeyboard();
-            })
-            .setNeutralButton("Hapus Semua", (d, w) -> history.clear())
-            .setNegativeButton("Tutup", null)
-            .show();
+
+        sb.append("<div class='divider'></div>")
+          .append("<div class='tip'>")
+          .append("Ketik langsung di address bar: ")
+          .append("<code>3000</code> · <code>localhost:8080</code> · <code>192.168.x.x:5173</code>")
+          .append("</div>")
+          .append("<div style='height:16px'></div>")
+          .append("</body></html>");
+
+        browserView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void openPort(int port) {
+                runOnUiThread(() -> navigateTo("localhost:" + port));
+            }
+        }, "Android");
+
+        browserView.loadDataWithBaseURL(null, sb.toString(), "text/html", "utf-8", null);
     }
 
-    // ── DevTools toggle ────────────────────────────────────────────────────────
-    private void toggleDevTools() {
-        devToolsOpen = !devToolsOpen;
-        devToolsPanel.setVisibility(devToolsOpen ? View.VISIBLE : View.GONE);
-        if (devToolsOpen)
-            devToolsView.evaluateJavascript("window.dtRefresh&&window.dtRefresh()", null);
-    }
-
-    private void updateNavButtons() {
-        btnBack.setAlpha(browserView.canGoBack() ? 1f : 0.3f);
-        btnFwd.setAlpha(browserView.canGoForward() ? 1f : 0.3f);
-    }
-
-    private String escJs(String s) {
-        return s.replace("\\","\\\\").replace("'","\\'").replace("\n","").replace("\r","");
-    }
-
-    private TextView makeIconBtn(String text) {
-        TextView btn = new TextView(this);
-        btn.setText(text);
-        btn.setTextColor(Color.parseColor("#6b7494"));
-        btn.setTextSize(18f);
-        btn.setPadding(dp(8), dp(8), dp(8), dp(8));
-        btn.setGravity(Gravity.CENTER);
-        btn.setMinWidth(dp(36));
-        btn.setMinHeight(dp(36));
-        return btn;
-    }
-
-    private int dp(int val) {
-        return Math.round(val * getResources().getDisplayMetrics().density);
-    }
-
-    private void hideKeyboard() {
-        android.view.inputmethod.InputMethodManager imm =
-            (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (imm != null) imm.hideSoftInputFromWindow(urlInput.getWindowToken(), 0);
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (devToolsOpen) { toggleDevTools(); return; }
-        if (browserView.canGoBack()) browserView.goBack();
-        else super.onBackPressed();
-    }
-
-    @Override protected void onResume()  { super.onResume();  browserView.onResume(); }
-    @Override protected void onPause()   { super.onPause();   browserView.onPause(); }
-    @Override protected void onDestroy() { super.onDestroy(); browserView.destroy(); devToolsView.destroy(); }
-}
+    // ── Cookie manager dialog ──────────────────────────────────────────────────
+    private void showCookieMenu() {
+        CookieManager cm = CookieManager.getInstance();
+        String currentUrl = isHomePage ? null : browserView.getUrl();
+        St
